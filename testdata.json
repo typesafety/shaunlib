@@ -1,0 +1,12 @@
+{
+  "op": 2,
+  "d": {
+    "token": "MY_TOKEN",
+    "properties": {
+      "os": "linux",
+      "browser": "disco",
+      "device": "disco"
+    },
+    "intents": 512
+  }
+}
