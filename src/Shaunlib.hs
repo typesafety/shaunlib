@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveGeneric #-}
+
 module Shaunlib where
 
 import Wuss
@@ -5,6 +7,7 @@ import Wuss
 import Control.Concurrent (forkIO)
 import Control.Monad (forever, void)
 import Data.Aeson
+import Data.Aeson.Types
 import Data.Text (Text, pack, unpack)
 import GHC.Generics
 import Network.WebSockets (ClientApp, receiveData, sendClose, sendTextData)
@@ -24,13 +27,21 @@ ws connection = do
     void . forkIO . forever $ do
         message <- receiveData @LBS.ByteString connection
 
-        LBS.putStr "message:\n"
-        LBS.putStr (message <> "\n")
+        let result = decode @EventPayload message
+        case result of
+            Just payload -> do
+                putStrLn "Successfully event parsed payload. payload:\n"
+                print payload
 
-        LBS.writeFile "message.txt" message
+                case payloadEventdata payload of
+                    Nothing -> pure ()
+                    -- TODO: try to extract EvHello
+                    -- Just eventData -> do
+                    --     print (decode @EvHello eventData)
 
-        let result = decode @GatewayEvent message
-        print result
+            Nothing -> do
+                LBS.putStr "Failed to parse event payload. message:\n"
+                LBS.putStr (message <> "\n")
 
     let loop = do
             _ <- getLine
@@ -41,9 +52,23 @@ ws connection = do
 
     sendClose connection (pack "Bye!")
 
-instance FromJSON GatewayEvent where
+-- * Gateway events
+
+-- https://discord.com/developers/docs/topics/gateway-events#
+
+-- | https://discord.com/developers/docs/topics/gateway-events#payload-structure
+data EventPayload = EventPayload
+    { payloadOpcode :: !Int -- op,
+    , payloadEventdata :: !(Maybe Object) -- d, Should be JSON, can be null
+    , payloadSequenceNumber :: !(Maybe Text) -- s, can be null
+    , payloadEventname :: !(Maybe Text) -- t, can be null
+    }
+    deriving (Show, Generic)
+
+instance FromJSON EventPayload where
+    parseJSON :: Value -> Parser EventPayload
     parseJSON = withObject "GatewayEvent" $ \event ->
-        Event
+        EventPayload
             <$> event
             .: "op"
             <*> event
@@ -53,8 +78,9 @@ instance FromJSON GatewayEvent where
             <*> event
             .: "t"
 
-instance ToJSON GatewayEvent where
-    toJSON (Event op evdata seqn evname) =
+instance ToJSON EventPayload where
+    toJSON :: EventPayload -> Value
+    toJSON (EventPayload op evdata seqn evname) =
         object
             [ "op" .= op
             , "d" .= evdata
@@ -62,14 +88,85 @@ instance ToJSON GatewayEvent where
             , "t" .= evname
             ]
 
-data GatewayEvent = Event
-    { gatewayOpcode :: !Int  -- op,
-    , gatewayEventdata :: !Object  -- d, Should be JSON, can be null
-    , gatewaySequenceNumber :: !(Maybe Text)  -- s, can be null
-    , gatewayEventname :: !(Maybe Text)  -- t, can be null
-    }
-    deriving (Show, Generic)
+-- * Send/Receive event types
 
+{- | Send event: https://discord.com/developers/docs/topics/gateway-events#identify-identify-structure
+
+Opcode 2
+-}
+data EvIdentify = EvIdentify
+    { evIdentifyToken :: !Token
+    , evIdentifyProperties :: !ConnectionProperties
+    , evCompress :: !(Maybe Bool)
+    , evLargeThreshold :: !(Maybe Int)
+    , evShard :: !(Maybe (ShardId, Int))
+    , evPresence :: !EvUpdatePresence
+    , evIntents :: !Int -- TODO: not a raw int
+    }
+    deriving (Eq, Show, Generic)
+
+{- | Send event: https://discord.com/developers/docs/topics/gateway-events#update-presence-gateway-presence-update-structure
+
+Opcode 3
+-}
+data EvUpdatePresence = EvUpdatePresence
+    { evUpdatePresenceSince :: !(Maybe Int)
+    , evUpdatePresenceActivities :: ![Activity]
+    , evUpdatePresenceStatus :: !Status
+    , evUpdatePresenceAfk :: !Bool
+    }
+    deriving (Eq, Show, Generic)
+
+{- | Receive event: https://discord.com/developers/docs/topics/gateway-events#hello
+
+Opcode 10
+-}
+data EvHello = EvHello
+    { evHelloHeartbeatInterval :: !Int
+    }
+    deriving (Eq, Show, Generic)
+
+instance ToJSON EvHello
+instance FromJSON EvHello
+
+-- * Other object types
+
+-- TODO (typesafety): Implement this
+-- https://discord.com/developers/docs/topics/gateway-events#activity-object
+data Activity
+    deriving (Eq, Show)
+
+-- | https://discord.com/developers/docs/topics/gateway-events#update-presence-status-types
+data Status
+    = Online
+    | Dnd
+    | Idle
+    | Invisible
+    | Offline
+    deriving (Eq, Show)
+
+-- | https://discord.com/developers/docs/topics/gateway-events#identify-identify-connection-properties
+data ConnectionProperties = ConnectionProperties
+    { connectionPropertiesOs :: Text
+    , connectionPropertiesBrowser :: Text
+    , connectionPropertiesDevice :: Text
+    }
+    deriving (Eq, Show)
+
+-- * Other types
+
+-- | https://discord.com/developers/docs/topics/gateway#sharding
+newtype ShardId = ShardId {unShardId :: Int}
+    deriving (Eq, Show)
+
+-- | Opaque token newtype
+newtype Token = Token {unToken :: Text}
+    deriving (Eq)
+
+instance Show Token where
+    show = const "<TOKEN>"
+
+-- | https://discord.com/developers/docs/topics/gateway#gateway-intents
 data Intent
     = MESSAGE_REACTION_ADD
     | MESSAGE_REACTIVE_REMOVE
