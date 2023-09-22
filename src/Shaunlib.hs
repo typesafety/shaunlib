@@ -95,30 +95,31 @@ Receive events are Gateway events encapsulated in an event payload, and are sent
 by Discord to an app through a Gateway connection.
 -}
 data ReceiveEvent
-    = -- | Defines the heartbeat interval.
-      --
-      -- Sent on connection to the websocket.  Defines the heartbeat interval
-      -- that an app should heartbeat to.
-      --
-      -- https://discord.com/developers/docs/topics/gateway-events#hello
-      Hello
+    -- | Defines the heartbeat interval.
+    --
+    -- Sent on connection to the websocket.  Defines the heartbeat interval
+    -- that an app should heartbeat to.
+    --
+    -- https://discord.com/developers/docs/topics/gateway-events#hello
+    = Hello
         -- | Heartbeat interval
         Int
-    | -- | Contains the initial state information.
-      --
-      -- The ready event is dispatched when a client has completed the initial
-      -- handshake with the gateway (for new sessions).  The ready event can be
-      -- the largest and most complex event the gateway will send, as it
-      -- contains all the state required for a client to begin interacting with
-      -- the rest of the platform.
-      --
-      -- https://discord.com/developers/docs/topics/gateway-events#ready
-      Ready
-        -- | API version (https://discord.com/developers/docs/reference#api-versioning-api-versions).
+
+    -- | Contains the initial state information.
+    --
+    -- The ready event is dispatched when a client has completed the initial
+    -- handshake with the gateway (for new sessions).  The ready event can be
+    -- the largest and most complex event the gateway will send, as it
+    -- contains all the state required for a client to begin interacting with
+    -- the rest of the platform.
+    --
+    -- https://discord.com/developers/docs/topics/gateway-events#ready
+    | Ready
+        -- | [API version](https://discord.com/developers/docs/reference#api-versioning-api-versions).
         Int
         -- | Information about the user.
         User
-        -- | List of Unavailable Guilds (https://discord.com/developers/docs/resources/guild#unavailable-guild-object).
+        -- | [List of Unavailable Guilds](https://discord.com/developers/docs/resources/guild#unavailable-guild-object).
         [UnavailableGuild]
         -- | Session ID.  Used for resuming connections.
         Text
@@ -159,16 +160,21 @@ data ReceiveEvent
     --
     -- https://discord.com/developers/docs/topics/gateway-events#invalid-session
     | InvalidSession
-        -- | Whether the session may be resumable or not.
+        -- | Whether the session may be resumable or not.  Instructions on
+        -- resuming: https://discord.com/developers/docs/topics/gateway#resuming
         Bool
 
--- | Unavailable Guild (https://discord.com/developers/docs/resources/guild#guild-object-guild-features)
+    -- ApplicationCommandPermissionsUpdate
+    -- https://discord.com/developers/docs/topics/gateway-events#application-command-permissions-update
+
+
+-- | Unavailable [Guild](https://discord.com/developers/docs/resources/guild#guild-object-guild-features)
 data UnavailableGuild = UnavailableGuild
     { unavailableGuildId :: Snowflake
     , unavailableGuildIsUnavailable :: Bool
     }
 
--- | User object (https://discord.com/developers/docs/resources/user#user-object)
+-- | [User object](https://discord.com/developers/docs/resources/user#user-object)
 data User = User
     { userId :: Snowflake
     , userUsername :: Text
