@@ -4,5 +4,5 @@
 
 ## Building
 
-* `ghc 9.4`
+* `ghc 9.6`
 * `cabal >= 3.4`
