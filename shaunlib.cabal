@@ -18,6 +18,7 @@ common warnings
 
 common extensions
     default-extensions:
+        DerivingVia,
         NoListTuplePuns,
         OverloadedStrings,
         TypeApplications,

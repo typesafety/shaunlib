@@ -6,11 +6,29 @@ import Wuss
 
 import Control.Concurrent (forkIO)
 import Control.Monad (forever, void)
-import Data.Aeson
-import Data.Aeson.Types
+import Data.Aeson.Types(
+    Parser,
+    )
+import Data.Aeson (
+    (.:),
+    (.=),
+    FromJSON,
+    Object,
+    ToJSON,
+    Value,
+    decode,
+    defaultOptions,
+    encode,
+    genericToEncoding,
+    object,
+    withObject,
+    )
 import Data.Text (Text, pack, unpack)
 import GHC.Generics
 import Network.WebSockets (ClientApp, receiveData, sendClose, sendTextData)
+
+import Data.Aeson qualified as Aeson
+import Data.Aeson.Types qualified as Aeson
 
 import Data.ByteString.Lazy qualified as LBS
 import Data.Int (Int64)
@@ -22,10 +40,29 @@ import Data.Tuple.Experimental (Tuple2, Unit)
 testapp :: IO Unit
 testapp = runSecureClient "gateway.discord.gg" 443 "/" ws
 
+makeIdentifyEvent :: Token -> EvIdentify
+makeIdentifyEvent token = EvIdentify {
+    evIdentifyToken = token,
+    evIdentifyProperties = ConnectionProperties {
+        connectionPropertiesOs = "somedistro",
+        connectionPropertiesBrowser = "shaunlib",
+        connectionPropertiesDevice = "shaunlib"
+        },
+    evCompress = Nothing,
+    evLargeThreshold = Nothing,
+    evShard = Nothing,
+    evPresence = Nothing,
+    evIntents = 46850
+    }
+
+todo = undefined
+
 ws :: ClientApp Unit
 ws connection = do
     putStrLn "Connected!"
-    file <- readFile "./local/testdata.json"
+    token <- readFile "token"
+
+    let identifyEvent = makeIdentifyEvent (Token (pack token))
 
     void . forkIO . forever $ do
         message <- receiveData @LBS.ByteString connection
@@ -48,8 +85,9 @@ ws connection = do
 
     let loop = do
             _ <- getLine
-            let line1 = file
-            sendTextData connection (pack line1)
+            let jsonIdentify = todo  -- toJSON identifyEvent
+            let jsonIdentifyBytes = undefined
+            sendTextData connection (pack todo)
             loop
     _ <- loop
 
@@ -57,7 +95,9 @@ ws connection = do
 
 -- * Lower-level
 
--- | https://discord.com/developers/docs/topics/gateway-events#payload-structure
+-- | Payload, top-level data structure. `payloadEventData` contains the specific
+-- data for the particular event that is sent.
+-- https://discord.com/developers/docs/topics/gateway-events#payload-structure
 data Payload = Payload
     { payloadOpcode :: !Int -- op,
     , payloadEventdata :: !(Maybe Object) -- d, Should be JSON, can be null
@@ -261,10 +301,20 @@ data EvIdentify = EvIdentify
     , evCompress :: !(Maybe Bool)
     , evLargeThreshold :: !(Maybe Int)
     , evShard :: !(Maybe (Tuple2 ShardId Int))
-    , evPresence :: !EvUpdatePresence
-    , evIntents :: !Int -- TODO: not a raw int
+    , evPresence :: !(Maybe EvUpdatePresence)
+    , evIntents :: !Int  -- TODO: not a raw int
     }
     deriving (Eq, Show, Generic)
+
+instance ToJSON EvIdentify where
+    toEncoding = genericToEncoding defaultOptions
+    -- toJSON :: EvIdentify -> Value
+    -- toJSON (EvIdentify token properties compress largeThreshold shard presence intents) =
+    --     object [
+    --         "token" .= token,
+    --         "properties" .= properties,
+
+    --         ]
 
 {- | Send event: https://discord.com/developers/docs/topics/gateway-events#update-presence-gateway-presence-update-structure
 
@@ -277,6 +327,9 @@ data EvUpdatePresence = EvUpdatePresence
     , evUpdatePresenceAfk :: !Bool
     }
     deriving (Eq, Show, Generic)
+
+instance ToJSON EvUpdatePresence where
+    toEncoding = genericToEncoding defaultOptions
 
 {- | Receive event: https://discord.com/developers/docs/topics/gateway-events#hello
 
@@ -292,10 +345,36 @@ instance FromJSON EvHello
 
 -- * Other object types
 
--- TODO (typesafety): Implement this
--- https://discord.com/developers/docs/topics/gateway-events#activity-object
-data Activity
+-- | https://discord.com/developers/docs/topics/gateway-events#activity-object
+data Activity = Activity {
+    activityName :: Text,
+    activityType :: ActivityType,
+    activityCreatedAt :: Int  -- TODO(typesafety): Add Unix timestamp type
+    -- TODO(typesafety): Finish implementing missing fields
+    }
+    deriving (Eq, Show, Generic)
+
+instance ToJSON Activity where
+    toEncoding = genericToEncoding defaultOptions
+
+-- | https://discord.com/developers/docs/topics/gateway-events#activity-object-activity-types
+data ActivityType
+    = Playing
+    | Streaming
+    | Listening
+    | Watching
+    | Custom
+    | Competing
     deriving (Eq, Show)
+
+instance ToJSON ActivityType where
+    toJSON = Aeson.Number . \case
+        Playing -> 0
+        Streaming -> 1
+        Listening -> 2
+        Watching -> 3
+        Custom -> 4
+        Competing -> 5
 
 -- | https://discord.com/developers/docs/topics/gateway-events#update-presence-status-types
 data Status
@@ -306,23 +385,40 @@ data Status
     | Offline
     deriving (Eq, Show)
 
+instance ToJSON Status where
+    toJSON = Aeson.String . \case
+        Online -> "online"
+        Dnd -> "dnd"
+        Idle -> "idle"
+        Invisible -> "invisible"
+        Offline -> "offline"
+
 -- | https://discord.com/developers/docs/topics/gateway-events#identify-identify-connection-properties
 data ConnectionProperties = ConnectionProperties
     { connectionPropertiesOs :: Text
     , connectionPropertiesBrowser :: Text
     , connectionPropertiesDevice :: Text
     }
-    deriving (Eq, Show)
+    deriving (Eq, Show, Generic)
+
+instance ToJSON ConnectionProperties where
+    toEncoding = genericToEncoding defaultOptions
 
 -- * Other types
 
 -- | https://discord.com/developers/docs/topics/gateway#sharding
 newtype ShardId = ShardId {unShardId :: Int}
-    deriving (Eq, Show)
+    deriving (Eq, Show, Generic)
+
+instance ToJSON ShardId where
+    toEncoding = genericToEncoding defaultOptions
 
 -- | Opaque token newtype
 newtype Token = Token {unToken :: Text}
-    deriving (Eq)
+    deriving (Eq, Generic)
+
+instance ToJSON Token where
+    toEncoding = genericToEncoding defaultOptions
 
 instance Show Token where
     show = const "<TOKEN>"
