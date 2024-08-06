@@ -23,23 +23,25 @@ import Data.Aeson (
     object,
     withObject,
     )
-import Data.Text (Text, pack, unpack)
+import Data.Text (Text, pack, unpack, strip)
+import Data.Text.Lazy (toStrict)
 import GHC.Generics
 import Network.WebSockets (ClientApp, receiveData, sendClose, sendTextData)
+import Text.Pretty.Simple (pShow)
 
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Types qualified as Aeson
+import Data.Text.IO qualified
 
 import Data.ByteString.Lazy qualified as LBS
 import Data.Int (Int64)
 import Data.List (List)
 import Data.Tuple.Experimental (Tuple2, Unit)
 
--- testapp :: IO ()
--- testapp = print . encode @GatewayEvent $ Event 1 "null" 41250 "null"
 testapp :: IO Unit
 testapp = runSecureClient "gateway.discord.gg" 443 "/" ws
 
+-- test
 makeIdentifyEvent :: Token -> EvIdentify
 makeIdentifyEvent token = EvIdentify {
     evIdentifyToken = token,
@@ -55,39 +57,60 @@ makeIdentifyEvent token = EvIdentify {
     evIntents = 46850
     }
 
+-- test
+makeIdentifyPayload :: Token -> Payload
+makeIdentifyPayload token = Payload {
+    payloadOpcode = 2,
+    payloadEventData = Just (Aeson.toJSON (makeIdentifyEvent token)),
+    payloadSequenceNumber = Nothing,
+    payloadEventName = Nothing
+    }
+
 todo = undefined
 
+putTxtLn :: Text -> IO Unit
+putTxtLn = Data.Text.IO.putStrLn
+
+pShowTxt :: Show a => a -> Text
+pShowTxt = toStrict . pShow
+
+-- test
 ws :: ClientApp Unit
 ws connection = do
-    putStrLn "Connected!"
-    token <- readFile "token"
+    putTxtLn "Connected!"
+    token <- strip . pack <$> readFile "token"
 
-    let identifyEvent = makeIdentifyEvent (Token (pack token))
+    let identifyPayload = makeIdentifyPayload (Token token)
 
+    -- Listen to payloads
     void . forkIO . forever $ do
         message <- receiveData @LBS.ByteString connection
 
         let result = decode @Payload message
         case result of
             Just payload -> do
-                putStrLn "Successfully event parsed payload. payload:\n"
-                print payload
+                putTxtLn
+                    $ "Successfully parsed payload:\n"
+                        <> (pShowTxt payload)
 
-                case payloadEventdata payload of
+                case payloadEventData payload of
                     Nothing -> pure ()
+                    Just _ -> pure ()
             -- TODO: try to extract EvHello
-            -- Just eventData -> do
-            --     print (decode @EvHello eventData)
+                    -- Just eventData -> do
+                    --     print (decode @EvHello eventData)
 
             Nothing -> do
                 LBS.putStr "Failed to parse event payload. message:\n"
                 LBS.putStr (message <> "\n")
 
+    -- Send Identify paylod
+    let encodedIdentify = Aeson.encode identifyPayload
+    putTxtLn $ "Sending Identify payload:\n" <> (pShowTxt identifyPayload)
+    sendTextData connection encodedIdentify
+
     let loop = do
             _ <- getLine
-            let jsonIdentify = todo  -- toJSON identifyEvent
-            let jsonIdentifyBytes = undefined
-            sendTextData connection (pack todo)
             loop
     _ <- loop
 
@@ -100,14 +123,18 @@ ws connection = do
 -- https://discord.com/developers/docs/topics/gateway-events#payload-structure
 data Payload = Payload
     { payloadOpcode :: !Int -- op,
-    , payloadEventdata :: !(Maybe Object) -- d, Should be JSON, can be null
+
+    -- TODO(typesafety): This shouldn't be Aeson.Object (or Value), it should be
+    -- some kind of event type.  How do we define a type for all events?  Normal
+    -- ADT?  Or do we need something fancier?
+    , payloadEventData :: !(Maybe Value) -- d, Should be a JSON object, can be null
+
     , payloadSequenceNumber :: !(Maybe Text) -- s, can be null
-    , payloadEventname :: !(Maybe Text) -- t, can be null
+    , payloadEventName :: !(Maybe Text) -- t, can be null
     }
     deriving (Show, Generic)
 
 instance FromJSON Payload where
-    parseJSON :: Value -> Parser Payload
     parseJSON = withObject "GatewayEvent" $ \event ->
         Payload
             <$> event
@@ -120,7 +147,6 @@ instance FromJSON Payload where
             .: "t"
 
 instance ToJSON Payload where
-    toJSON :: Payload -> Value
     toJSON (Payload op evdata seqn evname) =
         object
             [ "op" .= op
@@ -307,14 +333,18 @@ data EvIdentify = EvIdentify
     deriving (Eq, Show, Generic)
 
 instance ToJSON EvIdentify where
-    toEncoding = genericToEncoding defaultOptions
-    -- toJSON :: EvIdentify -> Value
-    -- toJSON (EvIdentify token properties compress largeThreshold shard presence intents) =
-    --     object [
-    --         "token" .= token,
-    --         "properties" .= properties,
+    toJSON (EvIdentify token properties compress largeThreshold shard presence intents) =
+        object [
+            "token" .= token,
+            "properties" .= properties,
+            "intents" .= intents
 
-    --         ]
+            -- TODO(typesafety): Get these working when needed
+            -- "compress" .= compress,
+            -- "large_threshold" .= largeThreshold,
+            -- "shard" .= shard,
+            -- "presence" .= presence,
+            ]
 
 {- | Send event: https://discord.com/developers/docs/topics/gateway-events#update-presence-gateway-presence-update-structure
 
@@ -329,7 +359,12 @@ data EvUpdatePresence = EvUpdatePresence
     deriving (Eq, Show, Generic)
 
 instance ToJSON EvUpdatePresence where
-    toEncoding = genericToEncoding defaultOptions
+    toJSON ev = object [
+        "since" .= evUpdatePresenceSince ev,
+        "activities" .= evUpdatePresenceActivities ev,
+        "status" .= evUpdatePresenceStatus ev,
+        "afk" .= evUpdatePresenceAfk ev
+        ]
 
 {- | Receive event: https://discord.com/developers/docs/topics/gateway-events#hello
 
@@ -355,7 +390,11 @@ data Activity = Activity {
     deriving (Eq, Show, Generic)
 
 instance ToJSON Activity where
-    toEncoding = genericToEncoding defaultOptions
+    toJSON activity = Aeson.object [
+        "name" .= activityName activity,
+        "type" .= activityType activity,
+        "created_at" .= activityCreatedAt activity
+        ]
 
 -- | https://discord.com/developers/docs/topics/gateway-events#activity-object-activity-types
 data ActivityType
@@ -402,7 +441,11 @@ data ConnectionProperties = ConnectionProperties
     deriving (Eq, Show, Generic)
 
 instance ToJSON ConnectionProperties where
-    toEncoding = genericToEncoding defaultOptions
+    toJSON cp = Aeson.object [
+        "os" .= connectionPropertiesOs cp,
+        "browser" .= connectionPropertiesBrowser cp,
+        "device" .= connectionPropertiesDevice cp
+        ]
 
 -- * Other types
 
@@ -411,14 +454,14 @@ newtype ShardId = ShardId {unShardId :: Int}
     deriving (Eq, Show, Generic)
 
 instance ToJSON ShardId where
-    toEncoding = genericToEncoding defaultOptions
+    toJSON = Aeson.Number . fromIntegral . unShardId
 
 -- | Opaque token newtype
 newtype Token = Token {unToken :: Text}
     deriving (Eq, Generic)
 
 instance ToJSON Token where
-    toEncoding = genericToEncoding defaultOptions
+    toJSON = Aeson.String . unToken
 
 instance Show Token where
     show = const "<TOKEN>"

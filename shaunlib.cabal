@@ -43,6 +43,7 @@ library
         aeson,
         bytestring,
         ghc-experimental,
+        pretty-simple,
         text,
         websockets,
         wuss,
