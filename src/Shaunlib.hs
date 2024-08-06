@@ -2,44 +2,42 @@
 
 module Shaunlib where
 
-import Wuss
-
 import Control.Concurrent (forkIO)
 import Control.Monad (forever, void)
-import Data.Aeson.Types(
-    Parser,
-    )
 import Data.Aeson (
     (.:),
     (.=),
     FromJSON,
-    Object,
     ToJSON,
     Value,
     decode,
-    defaultOptions,
-    encode,
-    genericToEncoding,
     object,
     withObject,
     )
-import Data.Text (Text, pack, unpack, strip)
+import Data.Text (Text, pack, strip)
 import Data.Text.Lazy (toStrict)
-import GHC.Generics
-import Network.WebSockets (ClientApp, receiveData, sendClose, sendTextData)
+import GHC.Generics (Generic)
+import Network.WebSockets (
+    ClientApp,
+    Connection,
+    receiveData,
+    sendClose,
+    sendTextData,
+    )
 import Text.Pretty.Simple (pShow)
+import Wuss (runSecureClient)
 
 import Data.Aeson qualified as Aeson
-import Data.Aeson.Types qualified as Aeson
 import Data.Text.IO qualified
 
+import Control.Exception (Exception, throwIO)
 import Data.ByteString.Lazy qualified as LBS
 import Data.Int (Int64)
 import Data.List (List)
 import Data.Tuple.Experimental (Tuple2, Unit)
 
-testapp :: IO Unit
-testapp = runSecureClient "gateway.discord.gg" 443 "/" ws
+runTestApp :: IO Unit
+runTestApp = runSecureClient "gateway.discord.gg" 443 "/" testApp
 
 -- test
 makeIdentifyEvent :: Token -> EvIdentify
@@ -66,6 +64,7 @@ makeIdentifyPayload token = Payload {
     payloadEventName = Nothing
     }
 
+todo :: a
 todo = undefined
 
 putTxtLn :: Text -> IO Unit
@@ -74,35 +73,52 @@ putTxtLn = Data.Text.IO.putStrLn
 pShowTxt :: Show a => a -> Text
 pShowTxt = toStrict . pShow
 
--- test
-ws :: ClientApp Unit
-ws connection = do
+handleDispatchEvent :: DispatchEvent -> IO Unit
+handleDispatchEvent _dispatchEvent = putTxtLn "TODO"
+
+-- | Runs in a loop, listening for gateway events on the given connection.
+listenForGatewayEvents :: Connection -> IO Unit
+listenForGatewayEvents connection = forever $ do
+    message <- receiveData @LBS.ByteString connection
+
+    let result = decode @Payload message
+    case result of
+        Just payload -> do
+            putTxtLn $ "Received gateway event with opcode: " <> pack (show (payloadOpcode payload))
+            putTxtLn $ "Payload content: \n" <> (pShowTxt payload)
+
+            -- https://discord.com/developers/docs/topics/opcodes-and-status-codes#gateway-gateway-opcodes
+            case payloadOpcode payload of
+                -- Event dispatched
+                0 -> case dispatchEventFromPayload payload of
+                    Left errMsg -> throwIO
+                        $ GenericDiscordError
+                            ("Malformed dispatch event payload; \n" <> errMsg <> "\n" <> pShowTxt payload)
+                    Right dispatchEvent -> handleDispatchEvent dispatchEvent
+
+                -- Hello
+                10 -> case payloadEventData payload of
+                    Nothing -> throwIO
+                        $ GenericDiscordError ("Malformed Hello payload; missing data: \n" <> pShowTxt payload)
+                    Just eventData -> do
+                        putTxtLn $ pShowTxt (Aeson.fromJSON @EvHello eventData)
+
+                n -> putTxtLn $ "Opcode not yet supported: " <> pack (show n)
+
+        Nothing -> do
+            LBS.putStr "Failed to parse event payload. message:\n"
+            LBS.putStr (message <> "\n")
+
+-- | Test application entry point.
+testApp :: ClientApp Unit
+testApp connection = do
     putTxtLn "Connected!"
     token <- strip . pack <$> readFile "token"
 
     let identifyPayload = makeIdentifyPayload (Token token)
 
-    -- Listen to payloads
-    void . forkIO . forever $ do
-        message <- receiveData @LBS.ByteString connection
-
-        let result = decode @Payload message
-        case result of
-            Just payload -> do
-                putTxtLn
-                    $ "Successfully parsed payload:\n"
-                        <> (pShowTxt payload)
-
-                case payloadEventData payload of
-                    Nothing -> pure ()
-                    Just _ -> pure ()
-            -- TODO: try to extract EvHello
-                    -- Just eventData -> do
-                    --     print (decode @EvHello eventData)
-
-            Nothing -> do
-                LBS.putStr "Failed to parse event payload. message:\n"
-                LBS.putStr (message <> "\n")
+    -- Listen to payloads in a separate thread
+    void . forkIO $ (listenForGatewayEvents connection)
 
     -- Send Identify paylod
     let encodedIdentify = Aeson.encode identifyPayload
@@ -115,6 +131,16 @@ ws connection = do
     _ <- loop
 
     sendClose connection (pack "Bye!")
+
+-- * Exceptions
+
+class Exception e => DiscordError e
+
+newtype GenericDiscordError = GenericDiscordError Text
+    deriving (Eq, Show)
+
+instance Exception GenericDiscordError
+instance DiscordError GenericDiscordError
 
 -- * Lower-level
 
@@ -129,13 +155,13 @@ data Payload = Payload
     -- ADT?  Or do we need something fancier?
     , payloadEventData :: !(Maybe Value) -- d, Should be a JSON object, can be null
 
-    , payloadSequenceNumber :: !(Maybe Text) -- s, can be null
+    , payloadSequenceNumber :: !(Maybe Int) -- s, can be null
     , payloadEventName :: !(Maybe Text) -- t, can be null
     }
     deriving (Show, Generic)
 
 instance FromJSON Payload where
-    parseJSON = withObject "GatewayEvent" $ \event ->
+    parseJSON = withObject "Payload" $ \event ->
         Payload
             <$> event
             .: "op"
@@ -154,6 +180,19 @@ instance ToJSON Payload where
             , "s" .= seqn
             , "t" .= evname
             ]
+
+data DispatchEvent = DispatchEvent {
+    dispatchEventData :: !Value,
+    dispatchEventSequenceNumber :: !Int,
+    dispatchEventName :: !Text
+    }
+    deriving (Eq, Show)
+
+dispatchEventFromPayload :: Payload -> Either Text DispatchEvent
+dispatchEventFromPayload = \case
+    Payload _ (Just eventData) (Just sequenceNumber) (Just eventName) ->
+        Right (DispatchEvent eventData sequenceNumber eventName)
+    _ -> Left "Missing sequence number ('s'), event name ('t'), or event data ('d')"
 
 {-| Receive Events
 
@@ -375,8 +414,9 @@ data EvHello = EvHello
     }
     deriving (Eq, Show, Generic)
 
-instance ToJSON EvHello
-instance FromJSON EvHello
+instance FromJSON EvHello where
+    parseJSON = withObject "EvHello" $ \event ->
+        EvHello <$> event .: "heartbeat_interval"
 
 -- * Other object types
 

@@ -9,4 +9,4 @@ import Data.Tuple.Experimental (Unit)
 import Shaunlib
 
 main :: IO Unit
-main = testapp
+main = runTestApp
