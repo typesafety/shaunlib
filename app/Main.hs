@@ -4,7 +4,9 @@
 
 module Main where
 
+import Data.Tuple.Experimental (Unit)
+
 import Shaunlib
 
-main :: IO ()
+main :: IO Unit
 main = testapp

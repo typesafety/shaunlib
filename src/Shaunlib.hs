@@ -14,13 +14,15 @@ import Network.WebSockets (ClientApp, receiveData, sendClose, sendTextData)
 
 import Data.ByteString.Lazy qualified as LBS
 import Data.Int (Int64)
+import Data.List (List)
+import Data.Tuple.Experimental (Tuple2, Unit)
 
 -- testapp :: IO ()
 -- testapp = print . encode @GatewayEvent $ Event 1 "null" 41250 "null"
-testapp :: IO ()
+testapp :: IO Unit
 testapp = runSecureClient "gateway.discord.gg" 443 "/" ws
 
-ws :: ClientApp ()
+ws :: ClientApp Unit
 ws connection = do
     putStrLn "Connected!"
     file <- readFile "./local/testdata.json"
@@ -120,7 +122,7 @@ data ReceiveEvent
         -- | Information about the user.
         User
         -- | [List of Unavailable Guilds](https://discord.com/developers/docs/resources/guild#unavailable-guild-object).
-        [UnavailableGuild]
+        (List UnavailableGuild)
         -- | Session ID.  Used for resuming connections.
         Text
         -- | Gateway URL for resuming connections.
@@ -258,7 +260,7 @@ data EvIdentify = EvIdentify
     , evIdentifyProperties :: !ConnectionProperties
     , evCompress :: !(Maybe Bool)
     , evLargeThreshold :: !(Maybe Int)
-    , evShard :: !(Maybe (ShardId, Int))
+    , evShard :: !(Maybe (Tuple2 ShardId Int))
     , evPresence :: !EvUpdatePresence
     , evIntents :: !Int -- TODO: not a raw int
     }
@@ -270,7 +272,7 @@ Opcode 3
 -}
 data EvUpdatePresence = EvUpdatePresence
     { evUpdatePresenceSince :: !(Maybe Int)
-    , evUpdatePresenceActivities :: ![Activity]
+    , evUpdatePresenceActivities :: !(List Activity)
     , evUpdatePresenceStatus :: !Status
     , evUpdatePresenceAfk :: !Bool
     }

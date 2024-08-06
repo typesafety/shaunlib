@@ -4,8 +4,14 @@
 
 ## Building
 
+```shell
+$ cabal build
+```
+
 ## Prerequisites
 
-* `ghc 9.6`
-* `cabal >= 3.4`
+* `ghc 9.10`
+* `cabal >= 3.12`
 * `zlib`
+  * Arch Linux: `zlib`
+  * Ubuntu: `zlib1g-dev`
