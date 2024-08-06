@@ -2,6 +2,8 @@
 
 😩🤛 Work in progress 🤕
 
+Put the bot token in a `token` file and run `cabal run` to run the thing
+
 ## Building
 
 ```shell
