@@ -1,3 +1,6 @@
+-- TODO next:
+-- * figure out why we get a CloseEvent 1000 after 30 seconds or so
+
 {-# LANGUAGE DeriveGeneric #-}
 
 module Shaunlib where
