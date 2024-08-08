@@ -32,6 +32,8 @@ library
     -- Modules exported by the library.
     exposed-modules:
         Shaunlib,
+        Shaunlib.Internal.Gateway,
+        Shaunlib.Internal.Utils,
 
     -- Modules included in this library but not exported.
     -- other-modules:

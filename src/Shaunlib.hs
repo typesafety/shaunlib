@@ -6,7 +6,15 @@
 module Shaunlib where
 
 import Control.Concurrent (forkIO)
+import Control.Exception (Exception, throwIO)
 import Control.Monad (forever, void)
+import Data.ByteString.Lazy qualified as LBS
+import Data.Int (Int64)
+import Data.List (List)
+import Data.Tuple.Experimental (Tuple2, Unit)
+import GHC.Generics (Generic)
+
+import Data.Aeson qualified as Aeson
 import Data.Aeson (
     (.:),
     (.=),
@@ -18,8 +26,8 @@ import Data.Aeson (
     withObject,
     )
 import Data.Text (Text, pack, strip)
+import Data.Text.IO qualified
 import Data.Text.Lazy (toStrict)
-import GHC.Generics (Generic)
 import Network.WebSockets (
     ClientApp,
     Connection,
@@ -27,17 +35,10 @@ import Network.WebSockets (
     sendClose,
     sendTextData,
     )
-import Text.Pretty.Simple (pShow)
+import Text.Pretty.Simple (pShow, pPrint)
 import Wuss (runSecureClient)
 
-import Data.Aeson qualified as Aeson
-import Data.Text.IO qualified
-
-import Control.Exception (Exception, throwIO)
-import Data.ByteString.Lazy qualified as LBS
-import Data.Int (Int64)
-import Data.List (List)
-import Data.Tuple.Experimental (Tuple2, Unit)
+import Shaunlib.Internal.Utils
 
 runTestApp :: IO Unit
 runTestApp = runSecureClient "gateway.discord.gg" 443 "/" testApp
@@ -67,17 +68,10 @@ makeIdentifyPayload token = Payload {
     payloadEventName = Nothing
     }
 
-todo :: a
-todo = undefined
-
-putTxtLn :: Text -> IO Unit
-putTxtLn = Data.Text.IO.putStrLn
-
-pShowTxt :: Show a => a -> Text
-pShowTxt = toStrict . pShow
-
 handleDispatchEvent :: DispatchEvent -> IO Unit
-handleDispatchEvent _dispatchEvent = putTxtLn "TODO"
+handleDispatchEvent event = do
+    putTxtLn "Handling DispatchEvent:"
+    pPrint event
 
 -- | Runs in a loop, listening for gateway events on the given connection.
 listenForGatewayEvents :: Connection -> IO Unit
