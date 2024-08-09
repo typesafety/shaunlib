@@ -2,6 +2,7 @@
 
 * Get handshake and a heartbeat loop up
 * Set up proper logging
+* Set up the main application monad (effectful, ReaderT IO etc.)
 
 ## Cleanup
 

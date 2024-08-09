@@ -21,11 +21,14 @@ import Shaunlib qualified as Shaunlib
 import Shaunlib.AppEnv (BotEnv(..), Token(..))
 import Shaunlib.Internal.Utils (putTxtLn, pShowTxt)
 
+
 -- | Run the gateway.
 -- See: https://discord.com/developers/docs/topics/gateway#connection-lifecycle
--- TODO(typesafety): should probably move this out
+-- TODO(typesafety): should probably move this out; this is basically the app
+--  entry point
 startGateway :: IO Unit
 startGateway = runSecureClient "gateway.discord.gg" 443 "/" $ \connection -> do
+    -- Read token and create the application environment
     token <- Token . strip . pack <$> readFile "token"
     let botEnv = BotEnv {
             botEnvToken = token,
@@ -58,13 +61,13 @@ handshake env = do
                 10 -> pure payload
                 _ -> waitForHello
 
-    waitForHello >>= \payload -> case Shaunlib.payloadEventData payload of
+    helloPayload <- waitForHello
+    case Shaunlib.payloadEventData helloPayload of
         Just eventData -> case Aeson.fromJSON eventData of
             Aeson.Error errMsg -> throwIO $ Shaunlib.GenericDiscordError (pack errMsg)
             Aeson.Success evHello -> pure evHello
-
         Nothing -> throwIO
-            $ Shaunlib.GenericDiscordError ("Malformed Hello payload; missing data: \n" <> pShowTxt payload)
+            $ Shaunlib.GenericDiscordError ("Malformed Hello payload; missing data: \n" <> pShowTxt helloPayload)
   where
     makeIdentifyPayload :: Token -> Shaunlib.Payload
     makeIdentifyPayload token = Shaunlib.Payload {
