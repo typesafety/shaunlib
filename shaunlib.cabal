@@ -18,7 +18,7 @@ common warnings
 
 common extensions
     default-extensions:
-        DerivingVia,
+        BlockArguments,
         NoListTuplePuns,
         OverloadedStrings,
         TypeApplications,
@@ -32,6 +32,7 @@ library
     -- Modules exported by the library.
     exposed-modules:
         Shaunlib,
+        Shaunlib.AppEnv,
         Shaunlib.Internal.Gateway,
         Shaunlib.Internal.Utils,
 

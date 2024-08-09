@@ -6,7 +6,7 @@ module Main where
 
 import Data.Tuple.Experimental (Unit)
 
-import Shaunlib
+import Shaunlib.Internal.Gateway
 
 main :: IO Unit
-main = runTestApp
+main = startGateway

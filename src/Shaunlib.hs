@@ -1,18 +1,9 @@
--- TODO next:
--- * figure out why we get a CloseEvent 1000 after 30 seconds or so
-
-{-# LANGUAGE DeriveGeneric #-}
-
 module Shaunlib where
 
-import Control.Concurrent (forkIO)
-import Control.Exception (Exception, throwIO)
-import Control.Monad (forever, void)
-import Data.ByteString.Lazy qualified as LBS
+import Control.Exception (Exception)
 import Data.Int (Int64)
 import Data.List (List)
-import Data.Tuple.Experimental (Tuple2, Unit)
-import GHC.Generics (Generic)
+import Data.Tuple.Experimental (Tuple2)
 
 import Data.Aeson qualified as Aeson
 import Data.Aeson (
@@ -21,113 +12,12 @@ import Data.Aeson (
     FromJSON,
     ToJSON,
     Value,
-    decode,
     object,
     withObject,
     )
-import Data.Text (Text, pack, strip)
-import Data.Text.IO qualified
-import Data.Text.Lazy (toStrict)
-import Network.WebSockets (
-    ClientApp,
-    Connection,
-    receiveData,
-    sendClose,
-    sendTextData,
-    )
-import Text.Pretty.Simple (pShow, pPrint)
-import Wuss (runSecureClient)
+import Data.Text (Text)
 
-import Shaunlib.Internal.Utils
-
-runTestApp :: IO Unit
-runTestApp = runSecureClient "gateway.discord.gg" 443 "/" testApp
-
--- test
-makeIdentifyEvent :: Token -> EvIdentify
-makeIdentifyEvent token = EvIdentify {
-    evIdentifyToken = token,
-    evIdentifyProperties = ConnectionProperties {
-        connectionPropertiesOs = "somedistro",
-        connectionPropertiesBrowser = "shaunlib",
-        connectionPropertiesDevice = "shaunlib"
-        },
-    evCompress = Nothing,
-    evLargeThreshold = Nothing,
-    evShard = Nothing,
-    evPresence = Nothing,
-    evIntents = 46850
-    }
-
--- test
-makeIdentifyPayload :: Token -> Payload
-makeIdentifyPayload token = Payload {
-    payloadOpcode = 2,
-    payloadEventData = Just (Aeson.toJSON (makeIdentifyEvent token)),
-    payloadSequenceNumber = Nothing,
-    payloadEventName = Nothing
-    }
-
-handleDispatchEvent :: DispatchEvent -> IO Unit
-handleDispatchEvent event = do
-    putTxtLn "Handling DispatchEvent:"
-    pPrint event
-
--- | Runs in a loop, listening for gateway events on the given connection.
-listenForGatewayEvents :: Connection -> IO Unit
-listenForGatewayEvents connection = forever $ do
-    message <- receiveData @LBS.ByteString connection
-
-    let result = decode @Payload message
-    case result of
-        Just payload -> do
-            putTxtLn $ "Received gateway event with opcode: " <> pack (show (payloadOpcode payload))
-            putTxtLn $ "Payload content: \n" <> (pShowTxt payload)
-
-            -- https://discord.com/developers/docs/topics/opcodes-and-status-codes#gateway-gateway-opcodes
-            case payloadOpcode payload of
-                -- Event dispatched
-                0 -> case dispatchEventFromPayload payload of
-                    Left errMsg -> throwIO
-                        $ GenericDiscordError
-                            ("Malformed dispatch event payload; \n" <> errMsg <> "\n" <> pShowTxt payload)
-                    Right dispatchEvent -> handleDispatchEvent dispatchEvent
-
-                -- Hello
-                10 -> case payloadEventData payload of
-                    Nothing -> throwIO
-                        $ GenericDiscordError ("Malformed Hello payload; missing data: \n" <> pShowTxt payload)
-                    Just eventData -> do
-                        putTxtLn $ pShowTxt (Aeson.fromJSON @EvHello eventData)
-
-                n -> putTxtLn $ "Opcode not yet supported: " <> pack (show n)
-
-        Nothing -> do
-            LBS.putStr "Failed to parse event payload. message:\n"
-            LBS.putStr (message <> "\n")
-
--- | Test application entry point.
-testApp :: ClientApp Unit
-testApp connection = do
-    putTxtLn "Connected!"
-    token <- strip . pack <$> readFile "token"
-
-    let identifyPayload = makeIdentifyPayload (Token token)
-
-    -- Listen to payloads in a separate thread
-    void . forkIO $ (listenForGatewayEvents connection)
-
-    -- Send Identify paylod
-    let encodedIdentify = Aeson.encode identifyPayload
-    putTxtLn $ "Sending Identify payload:\n" <> (pShowTxt identifyPayload)
-    sendTextData connection encodedIdentify
-
-    let loop = do
-            _ <- getLine
-            loop
-    _ <- loop
-
-    sendClose connection (pack "Bye!")
+import Shaunlib.AppEnv
 
 -- * Exceptions
 
@@ -155,7 +45,7 @@ data Payload = Payload
     , payloadSequenceNumber :: !(Maybe Int) -- s, can be null
     , payloadEventName :: !(Maybe Text) -- t, can be null
     }
-    deriving (Show, Generic)
+    deriving (Show)
 
 instance FromJSON Payload where
     parseJSON = withObject "Payload" $ \event ->
@@ -184,12 +74,6 @@ data DispatchEvent = DispatchEvent {
     dispatchEventName :: !Text
     }
     deriving (Eq, Show)
-
-dispatchEventFromPayload :: Payload -> Either Text DispatchEvent
-dispatchEventFromPayload = \case
-    Payload _ (Just eventData) (Just sequenceNumber) (Just eventName) ->
-        Right (DispatchEvent eventData sequenceNumber eventName)
-    _ -> Left "Missing sequence number ('s'), event name ('t'), or event data ('d')"
 
 {-| Receive Events
 
@@ -366,7 +250,7 @@ data EvIdentify = EvIdentify
     , evPresence :: !(Maybe EvUpdatePresence)
     , evIntents :: !Int  -- TODO: not a raw int
     }
-    deriving (Eq, Show, Generic)
+    deriving (Eq, Show)
 
 instance ToJSON EvIdentify where
     toJSON (EvIdentify token properties compress largeThreshold shard presence intents) =
@@ -392,7 +276,7 @@ data EvUpdatePresence = EvUpdatePresence
     , evUpdatePresenceStatus :: !Status
     , evUpdatePresenceAfk :: !Bool
     }
-    deriving (Eq, Show, Generic)
+    deriving (Eq, Show)
 
 instance ToJSON EvUpdatePresence where
     toJSON ev = object [
@@ -409,7 +293,7 @@ Opcode 10
 data EvHello = EvHello
     { evHelloHeartbeatInterval :: !Int
     }
-    deriving (Eq, Show, Generic)
+    deriving (Eq, Show)
 
 instance FromJSON EvHello where
     parseJSON = withObject "EvHello" $ \event ->
@@ -424,7 +308,7 @@ data Activity = Activity {
     activityCreatedAt :: Int  -- TODO(typesafety): Add Unix timestamp type
     -- TODO(typesafety): Finish implementing missing fields
     }
-    deriving (Eq, Show, Generic)
+    deriving (Eq, Show)
 
 instance ToJSON Activity where
     toJSON activity = Aeson.object [
@@ -475,7 +359,7 @@ data ConnectionProperties = ConnectionProperties
     , connectionPropertiesBrowser :: Text
     , connectionPropertiesDevice :: Text
     }
-    deriving (Eq, Show, Generic)
+    deriving (Eq, Show)
 
 instance ToJSON ConnectionProperties where
     toJSON cp = Aeson.object [
@@ -488,20 +372,10 @@ instance ToJSON ConnectionProperties where
 
 -- | https://discord.com/developers/docs/topics/gateway#sharding
 newtype ShardId = ShardId {unShardId :: Int}
-    deriving (Eq, Show, Generic)
+    deriving (Eq, Show)
 
 instance ToJSON ShardId where
     toJSON = Aeson.Number . fromIntegral . unShardId
-
--- | Opaque token newtype
-newtype Token = Token {unToken :: Text}
-    deriving (Eq, Generic)
-
-instance ToJSON Token where
-    toJSON = Aeson.String . unToken
-
-instance Show Token where
-    show = const "<TOKEN>"
 
 -- | https://discord.com/developers/docs/topics/gateway#gateway-intents
 data Intent
