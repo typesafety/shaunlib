@@ -40,7 +40,8 @@ func xs = do
 #### Long function signatures
 
 When splitting long function signatures, put separators after types rather than
-before them (makes code more `grep`-able ).
+before them.  In particular, put the `::` on the same line as the function name
+(makes code more `grep`-able ).
 
 Example:
 
@@ -78,9 +79,9 @@ module Shaunlib (
 ) where
 
 import Control.Concurrent (forkIO)
-import Data.Text qualified as Text
 
 import Data.Aeson qualified as Aeson
+import Data.Text qualified as Text
 
 import Shaunlib.Internal.Utils (putTxtLn)
 
@@ -88,3 +89,10 @@ import Shaunlib.Internal.Utils (putTxtLn)
 myFunc :: a -> a
 myFunc = id
 ```
+
+#### Imports
+
+* Use explicit export lists.
+* Use explicit import lists or qualified imports.
+* Make use of `ImportQualifiedPost` (loaded by default) and put the `qualified`
+  keyword after the module name.
